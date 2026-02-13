@@ -1,67 +1,336 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="card" style="max-width: 700px; width: 100%;">
-    <div class="card-title">Analysis Results</div>
-    <div class="card-text" style="margin-bottom: 20px;">
-      <strong>File:</strong> {{ analysis.filename }}<br>
-      <strong>Uploaded:</strong> {{ analysis.uploaded_at.strftime('%Y-%m-%d %H:%M:%S') }}
+  <div class="card" style="max-width: 1000px; width: 100%;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <div>
+        <div class="card-title">Analysis Results</div>
+        <div class="card-text" style="margin-bottom: 0;">
+          <strong>File:</strong> {{ analysis.filename }}<br>
+          <strong>Uploaded:</strong> {{ analysis.uploaded_at.strftime('%Y-%m-%d %H:%M:%S') }}
+        </div>
+      </div>
+      <div>
+        <a href="{{ url_for('export_pdf', analysis_id=analysis.id) }}" class="btn btn-primary" style="margin-right: 8px;">📄 Export PDF</a>
+        <a href="{{ url_for('index') }}" class="btn btn-outline">Upload Another</a>
+      </div>
     </div>
 
-    <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin-bottom: 16px;">
+    <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin-bottom: 20px;">
       <div style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Detected Columns</div>
       <div style="font-size: 13px;">
-        <strong>Date:</strong> {{ analysis.date_column or 'Not detected' }}<br>
-        <strong>Item:</strong> {{ analysis.item_column or 'Not detected' }}<br>
-        <strong>Quantity:</strong> {{ analysis.qty_column or 'Not detected' }}<br>
-        <strong>Rate:</strong> {{ analysis.rate_column or 'Not detected' }}<br>
+        <strong>Date:</strong> {{ analysis.date_column or 'Not detected' }} |
+        <strong>Item:</strong> {{ analysis.item_column or 'Not detected' }} |
+        <strong>Quantity:</strong> {{ analysis.qty_column or 'Not detected' }} |
+        <strong>Rate:</strong> {{ analysis.rate_column or 'Not detected' }} |
         <strong>Amount:</strong> {{ analysis.amount_column or 'Not detected' }}
       </div>
     </div>
 
-    <div style="margin-top: 24px;">
-      <h3 style="font-size: 16px; margin-bottom: 16px; color: #111827;">Sales Insights</h3>
+    <!-- Key Metrics Grid -->
+    <div style="margin-bottom: 30px;">
+      <h3 style="font-size: 18px; margin-bottom: 16px; color: #111827;">Key Metrics</h3>
       
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-        <div style="background: #eff6ff; padding: 12px; border-radius: 6px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
+        <div style="background: #eff6ff; padding: 16px; border-radius: 8px; border-left: 4px solid #2563eb;">
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Total Sales</div>
-          <div style="font-size: 20px; font-weight: bold; color: #1e40af;">₹{{ "{:,.2f}".format(analysis.total_sales) }}</div>
+          <div style="font-size: 24px; font-weight: bold; color: #1e40af;">₹{{ "{:,.2f}".format(analysis.total_sales) }}</div>
         </div>
         
-        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; border-left: 4px solid #16a34a;">
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Total Records</div>
-          <div style="font-size: 20px; font-weight: bold; color: #166534;">{{ analysis.total_records }}</div>
+          <div style="font-size: 24px; font-weight: bold; color: #166534;">{{ analysis.total_records }}</div>
         </div>
+
+        {% if analysis.avg_transaction_value %}
+        <div style="background: #fef3c7; padding: 16px; border-radius: 8px; border-left: 4px solid #d97706;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg Transaction</div>
+          <div style="font-size: 24px; font-weight: bold; color: #92400e;">₹{{ "{:,.2f}".format(analysis.avg_transaction_value) }}</div>
+        </div>
+        {% endif %}
+
+        {% if analysis.total_quantity %}
+        <div style="background: #fce7f3; padding: 16px; border-radius: 8px; border-left: 4px solid #db2777;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Total Quantity</div>
+          <div style="font-size: 24px; font-weight: bold; color: #9f1239;">{{ "{:,.0f}".format(analysis.total_quantity) }}</div>
+        </div>
+        {% endif %}
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-        <div style="background: #fef3c7; padding: 12px; border-radius: 6px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+        <div style="background: #fef3c7; padding: 16px; border-radius: 8px;">
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Last 7 Days</div>
-          <div style="font-size: 18px; font-weight: bold; color: #92400e;">₹{{ "{:,.2f}".format(analysis.last_7_days_sales) }}</div>
+          <div style="font-size: 20px; font-weight: bold; color: #92400e;">₹{{ "{:,.2f}".format(analysis.last_7_days_sales) }}</div>
+          {% if analysis.growth_rate_week %}
+          <div style="font-size: 11px; color: {% if analysis.growth_rate_week > 0 %}#16a34a{% else %}#dc2626{% endif %}; margin-top: 4px;">
+            {% if analysis.growth_rate_week > 0 %}↑{% else %}↓{% endif %} {{ "{:.1f}".format(analysis.growth_rate_week) }}%
+          </div>
+          {% endif %}
         </div>
         
-        <div style="background: #fce7f3; padding: 12px; border-radius: 6px;">
+        <div style="background: #fce7f3; padding: 16px; border-radius: 8px;">
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Last 30 Days</div>
-          <div style="font-size: 18px; font-weight: bold; color: #9f1239;">₹{{ "{:,.2f}".format(analysis.last_30_days_sales) }}</div>
+          <div style="font-size: 20px; font-weight: bold; color: #9f1239;">₹{{ "{:,.2f}".format(analysis.last_30_days_sales) }}</div>
+          {% if analysis.growth_rate_month %}
+          <div style="font-size: 11px; color: {% if analysis.growth_rate_month > 0 %}#16a34a{% else %}#dc2626{% endif %}; margin-top: 4px;">
+            {% if analysis.growth_rate_month > 0 %}↑{% else %}↓{% endif %} {{ "{:.1f}".format(analysis.growth_rate_month) }}%
+          </div>
+          {% endif %}
+        </div>
+
+        <div style="background: #e0e7ff; padding: 16px; border-radius: 8px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg/Day (Week)</div>
+          <div style="font-size: 20px; font-weight: bold; color: #3730a3;">₹{{ "{:,.2f}".format(analysis.avg_sales_per_day_week) }}</div>
+        </div>
+        
+        <div style="background: #ddd6fe; padding: 16px; border-radius: 8px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg/Day (Month)</div>
+          <div style="font-size: 20px; font-weight: bold; color: #5b21b6;">₹{{ "{:,.2f}".format(analysis.avg_sales_per_day_month) }}</div>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-        <div style="background: #e0e7ff; padding: 12px; border-radius: 6px;">
-          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg/Day (Week)</div>
-          <div style="font-size: 18px; font-weight: bold; color: #3730a3;">₹{{ "{:,.2f}".format(analysis.avg_sales_per_day_week) }}</div>
-        </div>
-        
-        <div style="background: #ddd6fe; padding: 12px; border-radius: 6px;">
-          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg/Day (Month)</div>
-          <div style="font-size: 18px; font-weight: bold; color: #5b21b6;">₹{{ "{:,.2f}".format(analysis.avg_sales_per_day_month) }}</div>
-        </div>
+      {% if analysis.peak_day %}
+      <div style="margin-top: 16px; padding: 12px; background: #f0f9ff; border-radius: 6px;">
+        <strong>Peak Sales Day:</strong> {{ analysis.peak_day }}
       </div>
+      {% endif %}
     </div>
 
-    <div style="margin-top: 24px; text-align: center;">
-      <a href="{{ url_for('index') }}" class="btn btn-primary">Upload Another File</a>
-      <a href="{{ url_for('history') }}" class="btn btn-outline" style="margin-left: 8px;">View History</a>
+    <!-- Charts Section -->
+    {% if analysis.additional_metrics %}
+    <div style="margin-top: 30px;">
+      <h3 style="font-size: 18px; margin-bottom: 16px; color: #111827;">Visualizations</h3>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+        <!-- Daily Sales Chart -->
+        {% if analysis.additional_metrics.daily_data %}
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <h4 style="font-size: 14px; margin-bottom: 12px; color: #374151;">Daily Sales Trend (Last 30 Days)</h4>
+          <canvas id="dailyChart" style="max-height: 300px;"></canvas>
+        </div>
+        {% endif %}
+
+        <!-- Monthly Sales Chart -->
+        {% if analysis.additional_metrics.monthly_data %}
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <h4 style="font-size: 14px; margin-bottom: 12px; color: #374151;">Monthly Sales Trend</h4>
+          <canvas id="monthlyChart" style="max-height: 300px;"></canvas>
+        </div>
+        {% endif %}
+
+        <!-- Day of Week Chart -->
+        {% if analysis.additional_metrics.day_of_week_data %}
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <h4 style="font-size: 14px; margin-bottom: 12px; color: #374151;">Sales by Day of Week</h4>
+          <canvas id="dayOfWeekChart" style="max-height: 300px;"></canvas>
+        </div>
+        {% endif %}
+
+        <!-- Top Products Chart -->
+        {% if analysis.additional_metrics.top_products %}
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <h4 style="font-size: 14px; margin-bottom: 12px; color: #374151;">Top 10 Products</h4>
+          <canvas id="topProductsChart" style="max-height: 300px;"></canvas>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Top Products Table -->
+    {% if analysis.additional_metrics and analysis.additional_metrics.top_products %}
+    <div style="margin-top: 30px;">
+      <h3 style="font-size: 18px; margin-bottom: 16px; color: #111827;">Top Selling Products</h3>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
+          <thead>
+            <tr style="background: #2563eb; color: white;">
+              <th style="padding: 12px; text-align: left; font-size: 13px;">Rank</th>
+              <th style="padding: 12px; text-align: left; font-size: 13px;">Product Name</th>
+              <th style="padding: 12px; text-align: right; font-size: 13px;">Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in analysis.additional_metrics.top_products[:10] %}
+            <tr style="border-bottom: 1px solid #e5e7eb; {% if loop.index % 2 == 0 %}background: #f9fafb;{% endif %}">
+              <td style="padding: 10px; font-size: 13px;">{{ loop.index }}</td>
+              <td style="padding: 10px; font-size: 13px;">{{ product.name }}</td>
+              <td style="padding: 10px; text-align: right; font-size: 13px; font-weight: 600;">₹{{ "{:,.2f}".format(product.sales) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top: 30px; text-align: center;">
+      <a href="{{ url_for('history') }}" class="btn btn-outline">View History</a>
     </div>
   </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    {% if analysis.additional_metrics %}
+      // Daily Sales Chart
+      {% if analysis.additional_metrics.daily_data %}
+      const dailyCtx = document.getElementById('dailyChart');
+      if (dailyCtx) {
+        const dailyData = {{ analysis.additional_metrics.daily_data | tojson }};
+        new Chart(dailyCtx, {
+          type: 'line',
+          data: {
+            labels: dailyData.map(d => d.date),
+            datasets: [{
+              label: 'Sales',
+              data: dailyData.map(d => d.sales),
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37, 99, 235, 0.1)',
+              tension: 0.4,
+              fill: true
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: { display: false }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return '₹' + value.toLocaleString();
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+      {% endif %}
+
+      // Monthly Sales Chart
+      {% if analysis.additional_metrics.monthly_data %}
+      const monthlyCtx = document.getElementById('monthlyChart');
+      if (monthlyCtx) {
+        const monthlyData = {{ analysis.additional_metrics.monthly_data | tojson }};
+        new Chart(monthlyCtx, {
+          type: 'bar',
+          data: {
+            labels: monthlyData.map(d => d.month),
+            datasets: [{
+              label: 'Sales',
+              data: monthlyData.map(d => d.sales),
+              backgroundColor: '#16a34a',
+              borderColor: '#15803d',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: { display: false }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return '₹' + value.toLocaleString();
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+      {% endif %}
+
+      // Day of Week Chart
+      {% if analysis.additional_metrics.day_of_week_data %}
+      const dayOfWeekCtx = document.getElementById('dayOfWeekChart');
+      if (dayOfWeekCtx) {
+        const dayData = {{ analysis.additional_metrics.day_of_week_data | tojson }};
+        new Chart(dayOfWeekCtx, {
+          type: 'bar',
+          data: {
+            labels: dayData.map(d => d.day),
+            datasets: [{
+              label: 'Sales',
+              data: dayData.map(d => d.sales),
+              backgroundColor: [
+                '#ef4444', '#f97316', '#eab308', '#22c55e',
+                '#3b82f6', '#8b5cf6', '#ec4899'
+              ],
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: { display: false }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return '₹' + value.toLocaleString();
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+      {% endif %}
+
+      // Top Products Chart
+      {% if analysis.additional_metrics.top_products %}
+      const topProductsCtx = document.getElementById('topProductsChart');
+      if (topProductsCtx) {
+        const topProducts = {{ analysis.additional_metrics.top_products[:10] | tojson }};
+        new Chart(topProductsCtx, {
+          type: 'doughnut',
+          data: {
+            labels: topProducts.map(p => p.name),
+            datasets: [{
+              data: topProducts.map(p => p.sales),
+              backgroundColor: [
+                '#2563eb', '#16a34a', '#dc2626', '#d97706',
+                '#9333ea', '#ec4899', '#06b6d4', '#84cc16',
+                '#f59e0b', '#6366f1'
+              ]
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: {
+                position: 'right',
+                labels: {
+                  boxWidth: 12,
+                  font: { size: 10 }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return context.label + ': ₹' + context.parsed.toLocaleString();
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+      {% endif %}
+    {% endif %}
+  </script>
 {% endblock %}

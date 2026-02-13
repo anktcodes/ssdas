@@ -1,11 +1,17 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import psycopg2
 import psycopg2.extras
 import pandas as pd
 import os
+import json
 from datetime import datetime, timedelta
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 app = Flask(__name__)
 app.secret_key = "change_this_secret_key"  # put a strong random string here
@@ -131,6 +137,12 @@ def analyze_sales_data(df, detected_cols):
     # Convert amount to numeric
     df[detected_cols["amount"]] = pd.to_numeric(df[detected_cols["amount"]], errors="coerce")
     
+    # Convert quantity and rate if available
+    if detected_cols["qty"]:
+        df[detected_cols["qty"]] = pd.to_numeric(df[detected_cols["qty"]], errors="coerce")
+    if detected_cols["rate"]:
+        df[detected_cols["rate"]] = pd.to_numeric(df[detected_cols["rate"]], errors="coerce")
+    
     # Remove rows with invalid dates or amounts
     df_clean = df.dropna(subset=[detected_cols["date"], detected_cols["amount"]])
     
@@ -143,9 +155,12 @@ def analyze_sales_data(df, detected_cols):
     # Calculate date ranges
     last_7_days = today - timedelta(days=7)
     last_30_days = today - timedelta(days=30)
+    last_60_days = today - timedelta(days=60)
     
     # Convert date column to date for comparison
     df_clean["date_only"] = df_clean[detected_cols["date"]].dt.date
+    df_clean["month"] = df_clean[detected_cols["date"]].dt.to_period("M")
+    df_clean["day_of_week"] = df_clean[detected_cols["date"]].dt.day_name()
     
     # Total sales
     total_sales = float(df_clean[detected_cols["amount"]].sum())
@@ -158,8 +173,11 @@ def analyze_sales_data(df, detected_cols):
     df_last_30 = df_clean[df_clean["date_only"] >= last_30_days]
     last_30_days_sales = float(df_last_30[detected_cols["amount"]].sum())
     
+    # Last 60 days sales (for growth calculation)
+    df_last_60 = df_clean[df_clean["date_only"] >= last_60_days]
+    last_60_days_sales = float(df_last_60[detected_cols["amount"]].sum())
+    
     # Average sales per day (last 7 days)
-    days_in_week = 7
     if len(df_last_7) > 0:
         unique_days_week = df_last_7["date_only"].nunique()
         avg_sales_per_day_week = last_7_days_sales / unique_days_week if unique_days_week > 0 else 0
@@ -167,12 +185,51 @@ def analyze_sales_data(df, detected_cols):
         avg_sales_per_day_week = 0
     
     # Average sales per day (last 30 days)
-    days_in_month = 30
     if len(df_last_30) > 0:
         unique_days_month = df_last_30["date_only"].nunique()
         avg_sales_per_day_month = last_30_days_sales / unique_days_month if unique_days_month > 0 else 0
     else:
         avg_sales_per_day_month = 0
+    
+    # Growth rate (last 7 days vs previous 7 days)
+    df_prev_7 = df_clean[(df_clean["date_only"] >= last_7_days - timedelta(days=7)) & 
+                         (df_clean["date_only"] < last_7_days)]
+    prev_7_days_sales = float(df_prev_7[detected_cols["amount"]].sum()) if len(df_prev_7) > 0 else 0
+    growth_rate_week = ((last_7_days_sales - prev_7_days_sales) / prev_7_days_sales * 100) if prev_7_days_sales > 0 else 0
+    
+    # Growth rate (last 30 days vs previous 30 days)
+    df_prev_30 = df_clean[(df_clean["date_only"] >= last_30_days - timedelta(days=30)) & 
+                          (df_clean["date_only"] < last_30_days)]
+    prev_30_days_sales = float(df_prev_30[detected_cols["amount"]].sum()) if len(df_prev_30) > 0 else 0
+    growth_rate_month = ((last_30_days_sales - prev_30_days_sales) / prev_30_days_sales * 100) if prev_30_days_sales > 0 else 0
+    
+    # Best selling products (if item column exists)
+    top_products = []
+    if detected_cols["item"]:
+        product_sales = df_clean.groupby(detected_cols["item"])[detected_cols["amount"]].sum().sort_values(ascending=False).head(10)
+        top_products = [{"name": str(name), "sales": float(sales)} for name, sales in product_sales.items()]
+    
+    # Monthly sales trend
+    monthly_sales = df_clean.groupby("month")[detected_cols["amount"]].sum()
+    monthly_data = [{"month": str(month), "sales": float(sales)} for month, sales in monthly_sales.items()]
+    
+    # Daily sales trend (last 30 days)
+    daily_sales = df_last_30.groupby("date_only")[detected_cols["amount"]].sum().sort_index()
+    daily_data = [{"date": str(date), "sales": float(sales)} for date, sales in daily_sales.items()]
+    
+    # Day of week analysis
+    day_of_week_sales = df_clean.groupby("day_of_week")[detected_cols["amount"]].sum()
+    day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_of_week_data = [{"day": day, "sales": float(day_of_week_sales.get(day, 0))} for day in day_order]
+    
+    # Peak sales day
+    peak_day = day_of_week_sales.idxmax() if len(day_of_week_sales) > 0 else None
+    
+    # Average transaction value
+    avg_transaction_value = total_sales / len(df_clean) if len(df_clean) > 0 else 0
+    
+    # Total quantity sold (if available)
+    total_quantity = float(df_clean[detected_cols["qty"]].sum()) if detected_cols["qty"] and not df_clean[detected_cols["qty"]].isna().all() else None
     
     return {
         "total_sales": round(total_sales, 2),
@@ -180,7 +237,16 @@ def analyze_sales_data(df, detected_cols):
         "last_30_days_sales": round(last_30_days_sales, 2),
         "avg_sales_per_day_week": round(avg_sales_per_day_week, 2),
         "avg_sales_per_day_month": round(avg_sales_per_day_month, 2),
-        "total_records": len(df_clean)
+        "total_records": len(df_clean),
+        "growth_rate_week": round(growth_rate_week, 2),
+        "growth_rate_month": round(growth_rate_month, 2),
+        "top_products": top_products,
+        "monthly_data": monthly_data,
+        "daily_data": daily_data,
+        "day_of_week_data": day_of_week_data,
+        "peak_day": peak_day,
+        "avg_transaction_value": round(avg_transaction_value, 2),
+        "total_quantity": round(total_quantity, 2) if total_quantity else None
     }
 
 
@@ -318,20 +384,32 @@ def upload():
         conn = get_db()
         cur = conn.cursor()
         
+        # Prepare additional metrics JSON
+        additional_metrics = {
+            "top_products": analysis_results.get("top_products", []),
+            "monthly_data": analysis_results.get("monthly_data", []),
+            "daily_data": analysis_results.get("daily_data", []),
+            "day_of_week_data": analysis_results.get("day_of_week_data", [])
+        }
+        
         cur.execute("""
             INSERT INTO analyses (
                 user_id, filename, date_column, item_column, qty_column, 
                 rate_column, amount_column, total_sales, last_7_days_sales,
                 last_30_days_sales, avg_sales_per_day_week, avg_sales_per_day_month,
-                total_records
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                total_records, growth_rate_week, growth_rate_month, 
+                avg_transaction_value, peak_day, total_quantity, additional_metrics
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             user_id, filename, detected_cols["date"], detected_cols["item"],
             detected_cols["qty"], detected_cols["rate"], detected_cols["amount"],
             analysis_results["total_sales"], analysis_results["last_7_days_sales"],
             analysis_results["last_30_days_sales"], analysis_results["avg_sales_per_day_week"],
-            analysis_results["avg_sales_per_day_month"], analysis_results["total_records"]
+            analysis_results["avg_sales_per_day_month"], analysis_results["total_records"],
+            analysis_results.get("growth_rate_week", 0), analysis_results.get("growth_rate_month", 0),
+            analysis_results.get("avg_transaction_value", 0), analysis_results.get("peak_day"),
+            analysis_results.get("total_quantity"), json.dumps(additional_metrics)
         ))
         
         analysis_id = cur.fetchone()[0]
@@ -377,7 +455,193 @@ def results(analysis_id):
         flash("Analysis not found or you don't have permission to view it.", "error")
         return redirect(url_for("index"))
     
+    # Parse additional_metrics JSON if it exists
+    if analysis.get("additional_metrics"):
+        try:
+            if isinstance(analysis["additional_metrics"], str):
+                analysis["additional_metrics"] = json.loads(analysis["additional_metrics"])
+        except:
+            analysis["additional_metrics"] = {}
+    else:
+        analysis["additional_metrics"] = {}
+    
     return render_template("results.html", analysis=analysis)
+
+
+@app.route("/export_pdf/<int:analysis_id>")
+def export_pdf(analysis_id):
+    # Check if user is logged in
+    if "user_id" not in session:
+        flash("Please log in to export reports.", "error")
+        return redirect(url_for("login"))
+    
+    user_id = session["user_id"]
+    
+    # Get analysis from database
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("""
+        SELECT a.*, u.name as user_name, u.email as user_email
+        FROM analyses a
+        JOIN users u ON a.user_id = u.id
+        WHERE a.id = %s AND a.user_id = %s
+    """, (analysis_id, user_id))
+    
+    analysis = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    if not analysis:
+        flash("Analysis not found.", "error")
+        return redirect(url_for("index"))
+    
+    # Parse additional_metrics JSON if it exists
+    if analysis.get("additional_metrics"):
+        try:
+            if isinstance(analysis["additional_metrics"], str):
+                additional_metrics = json.loads(analysis["additional_metrics"])
+            else:
+                additional_metrics = analysis["additional_metrics"]
+        except:
+            additional_metrics = {}
+    else:
+        additional_metrics = {}
+    
+    # Create PDF
+    buffer = os.path.join(app.config["UPLOAD_FOLDER"], f"report_{analysis_id}.pdf")
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    story = []
+    
+    # Styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "CustomTitle",
+        parent=styles["Heading1"],
+        fontSize=24,
+        textColor=colors.HexColor("#1e40af"),
+        spaceAfter=30,
+    )
+    heading_style = ParagraphStyle(
+        "CustomHeading",
+        parent=styles["Heading2"],
+        fontSize=16,
+        textColor=colors.HexColor("#374151"),
+        spaceAfter=12,
+    )
+    
+    # Title
+    story.append(Paragraph("Smart Sales Data Analysis System", title_style))
+    story.append(Paragraph("Sales Analysis Report", styles["Heading2"]))
+    story.append(Spacer(1, 12))
+    
+    # Report Info
+    report_data = [
+        ["Report Generated On:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+        ["File Analyzed:", analysis["filename"]],
+        ["Uploaded On:", analysis["uploaded_at"].strftime("%Y-%m-%d %H:%M:%S") if analysis["uploaded_at"] else "N/A"],
+        ["Total Records:", str(analysis["total_records"])],
+    ]
+    report_table = Table(report_data, colWidths=[3*inch, 4*inch])
+    report_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f4f6")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 1, colors.grey),
+    ]))
+    story.append(report_table)
+    story.append(Spacer(1, 20))
+    
+    # Sales Metrics
+    story.append(Paragraph("Sales Metrics", heading_style))
+    metrics_data = [
+        ["Metric", "Value"],
+        ["Total Sales", f"₹{analysis['total_sales']:,.2f}"],
+        ["Last 7 Days Sales", f"₹{analysis['last_7_days_sales']:,.2f}"],
+        ["Last 30 Days Sales", f"₹{analysis['last_30_days_sales']:,.2f}"],
+        ["Avg Sales/Day (Week)", f"₹{analysis['avg_sales_per_day_week']:,.2f}"],
+        ["Avg Sales/Day (Month)", f"₹{analysis['avg_sales_per_day_month']:,.2f}"],
+    ]
+    
+    if analysis.get("growth_rate_week") is not None:
+        metrics_data.append(["Growth Rate (Week)", f"{analysis['growth_rate_week']:.2f}%"])
+    if analysis.get("growth_rate_month") is not None:
+        metrics_data.append(["Growth Rate (Month)", f"{analysis['growth_rate_month']:.2f}%"])
+    if analysis.get("avg_transaction_value"):
+        metrics_data.append(["Avg Transaction Value", f"₹{analysis['avg_transaction_value']:,.2f}"])
+    if analysis.get("peak_day"):
+        metrics_data.append(["Peak Sales Day", str(analysis["peak_day"])])
+    if analysis.get("total_quantity"):
+        metrics_data.append(["Total Quantity Sold", f"{analysis['total_quantity']:,.2f}"])
+    
+    metrics_table = Table(metrics_data, colWidths=[3*inch, 4*inch])
+    metrics_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 1, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+    ]))
+    story.append(metrics_table)
+    story.append(Spacer(1, 20))
+    
+    # Top Products
+    if additional_metrics.get("top_products"):
+        story.append(Paragraph("Top Selling Products", heading_style))
+        products_data = [["Rank", "Product", "Sales"]]
+        for idx, product in enumerate(additional_metrics["top_products"][:10], 1):
+            products_data.append([str(idx), product["name"], f"₹{product['sales']:,.2f}"])
+        
+        products_table = Table(products_data, colWidths=[0.8*inch, 4*inch, 2.2*inch])
+        products_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("ALIGN", (-1, 1), (-1, -1), "RIGHT"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("GRID", (0, 0), (-1, -1), 1, colors.grey),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+        ]))
+        story.append(products_table)
+        story.append(Spacer(1, 20))
+    
+    # Detected Columns
+    story.append(Paragraph("Detected Columns", heading_style))
+    columns_data = [
+        ["Column Type", "Detected Name"],
+        ["Date", analysis["date_column"] or "Not detected"],
+        ["Item", analysis["item_column"] or "Not detected"],
+        ["Quantity", analysis["qty_column"] or "Not detected"],
+        ["Rate", analysis["rate_column"] or "Not detected"],
+        ["Amount", analysis["amount_column"] or "Not detected"],
+    ]
+    columns_table = Table(columns_data, colWidths=[3*inch, 4*inch])
+    columns_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 1, colors.grey),
+    ]))
+    story.append(columns_table)
+    
+    # Build PDF
+    doc.build(story)
+    
+    return send_file(buffer, as_attachment=True, download_name=f"SSDAS_Report_{analysis_id}.pdf")
 
 
 @app.route("/history")
