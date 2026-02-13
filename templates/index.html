@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% if user %}
+    <div class="card">
+      <div class="card-title">Upload Sales Data</div>
+      <div class="card-text">
+        Select a <strong>.csv</strong> or <strong>.xlsx</strong> file to start your analysis.
+      </div>
+      <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.xlsx" required>
+        <br>
+        <button type="submit" class="btn btn-primary">Upload & Analyse</button>
+      </form>
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="card-title">Welcome to SSDAS</div>
+      <div class="card-text">
+        Please <a href="{{ url_for('login') }}">log in</a> or <a href="{{ url_for('register') }}">sign up</a> to upload and analyze your sales data.
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

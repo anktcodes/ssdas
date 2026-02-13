@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="card" style="max-width: 700px; width: 100%;">
+    <div class="card-title">Analysis Results</div>
+    <div class="card-text" style="margin-bottom: 20px;">
+      <strong>File:</strong> {{ analysis.filename }}<br>
+      <strong>Uploaded:</strong> {{ analysis.uploaded_at.strftime('%Y-%m-%d %H:%M:%S') }}
+    </div>
+
+    <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin-bottom: 16px;">
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Detected Columns</div>
+      <div style="font-size: 13px;">
+        <strong>Date:</strong> {{ analysis.date_column or 'Not detected' }}<br>
+        <strong>Item:</strong> {{ analysis.item_column or 'Not detected' }}<br>
+        <strong>Quantity:</strong> {{ analysis.qty_column or 'Not detected' }}<br>
+        <strong>Rate:</strong> {{ analysis.rate_column or 'Not detected' }}<br>
+        <strong>Amount:</strong> {{ analysis.amount_column or 'Not detected' }}
+      </div>
+    </div>
+
+    <div style="margin-top: 24px;">
+      <h3 style="font-size: 16px; margin-bottom: 16px; color: #111827;">Sales Insights</h3>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+        <div style="background: #eff6ff; padding: 12px; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Total Sales</div>
+          <div style="font-size: 20px; font-weight: bold; color: #1e40af;">₹{{ "{:,.2f}".format(analysis.total_sales) }}</div>
+        </div>
+        
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Total Records</div>
+          <div style="font-size: 20px; font-weight: bold; color: #166534;">{{ analysis.total_records }}</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+        <div style="background: #fef3c7; padding: 12px; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Last 7 Days</div>
+          <div style="font-size: 18px; font-weight: bold; color: #92400e;">₹{{ "{:,.2f}".format(analysis.last_7_days_sales) }}</div>
+        </div>
+        
+        <div style="background: #fce7f3; padding: 12px; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Last 30 Days</div>
+          <div style="font-size: 18px; font-weight: bold; color: #9f1239;">₹{{ "{:,.2f}".format(analysis.last_30_days_sales) }}</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="background: #e0e7ff; padding: 12px; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg/Day (Week)</div>
+          <div style="font-size: 18px; font-weight: bold; color: #3730a3;">₹{{ "{:,.2f}".format(analysis.avg_sales_per_day_week) }}</div>
+        </div>
+        
+        <div style="background: #ddd6fe; padding: 12px; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Avg/Day (Month)</div>
+          <div style="font-size: 18px; font-weight: bold; color: #5b21b6;">₹{{ "{:,.2f}".format(analysis.avg_sales_per_day_month) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 24px; text-align: center;">
+      <a href="{{ url_for('index') }}" class="btn btn-primary">Upload Another File</a>
+      <a href="{{ url_for('history') }}" class="btn btn-outline" style="margin-left: 8px;">View History</a>
+    </div>
+  </div>
+{% endblock %}
